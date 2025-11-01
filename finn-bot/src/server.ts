@@ -1,7 +1,6 @@
 import { routeAgentRequest, type Schedule } from "agents";
 import { getSchedulePrompt } from "agents/schedule";
 import { AIChatAgent } from "agents/ai-chat-agent";
-
 import {
   generateId,
   streamText,
@@ -12,22 +11,21 @@ import {
   createUIMessageStreamResponse,
   type ToolSet,
 } from "ai";
-
 import { createWorkersAI } from "workers-ai-provider";
 import { processToolCalls, cleanupMessages } from "./utils";
 import { tools, executions } from "./tools";
 import { env } from "cloudflare:workers";
 
-// --- Initialize Workers AI ---
-const workersai = createWorkersAI({ binding: env.AI });
 
-// 💡 You can switch to other models like:
-// const model = workersai("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
+
+type Env = {
+  FINANCIAL_ADVICE_WORKFLOW: Workflow;
+  AI: any;
+};
+
+const workersai = createWorkersAI({ binding: env.AI });
 const model = workersai("@cf/meta/llama-3.2-1b-instruct");
 
-/**
- * Chat Agent implementation that handles AI chat interactions
- */
 export class Chat extends AIChatAgent<Env> {
   async onChatMessage(
     onFinish: StreamTextOnFinishCallback<ToolSet>,
@@ -40,33 +38,34 @@ export class Chat extends AIChatAgent<Env> {
 
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
-        // Clean up incomplete or duplicate tool calls
         const cleanedMessages = cleanupMessages(this.messages);
-
-        // Process pending tool calls from previous messages
         const processedMessages = await processToolCalls({
           messages: cleanedMessages,
           dataStream: writer,
           tools: allTools,
           executions,
         });
-
-        // --- AI Model Stream ---
         const result = streamText({
           system: `
-You are Finn, a helpful assistant.
-
-Only call tools that are explicitly available to you.
-If you don’t have the right tool, just explain the answer conversationally.
-Do not invent new tools such as "getSolarInformation".
-Respond in natural language, not JSON, unless explicitly asked.
-
+You are **Finn**, a friendly and intelligent financial assistant.
+          
+          You do NOT have access to real-time stock or Nasdaq data.
+If users ask about live data, tell them where they can find it (like Yahoo Finance or Bloomberg),
+but do not attempt to call any tool for it.
+🧭 Your job:
+- Help users with financial questions, investing concepts, or budgeting tips.
+- If a question is NOT related to finance, politely say you cannot answer.
+- DO NOT return JSON, code, or structured objects.
+- Provide only natural, human-readable text as your final answer.
+- When using tools (like "searchWeb"), summarize the findings and end with actionable financial advice.
+- Always wrap up with a clear recommendation or insight — e.g., “Based on this, you might consider...”.
 
 ${getSchedulePrompt({ date: new Date() })}
 
 If the user asks to schedule something, use the **schedule** tool.
-If unsure, ask clarifying questions.
+If unsure, ask clarifying questions before acting.
           `.trim(),
+
           messages: convertToModelMessages(processedMessages),
           model,
           tools: allTools,
@@ -95,24 +94,43 @@ If unsure, ask clarifying questions.
 }
 
 /**
- * Worker entry point for routing requests
+ * --- Worker entry point ---
  */
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext) {
     const url = new URL(request.url);
 
+    // Healthcheck endpoint
     if (url.pathname === "/check-open-ai-key") {
       const hasAI = !!env.AI;
       return Response.json({ success: hasAI });
     }
 
+    // Advice workflow endpoint (NEW)
+    if (url.pathname.startsWith("/advice")) {
+      const query = url.searchParams.get("query") || "";
+      // Create a new workflow instance with the query parameter
+      const instance = await env.FINANCIAL_ADVICE_WORKFLOW.create({
+        params: { query },
+      });
+      // Wait or check status
+      const details = await instance.status();
+      // Return status and any results
+      return Response.json({
+        id: instance.id,
+        ...details,
+      });
+    }
+
+    // Error check for missing binding
     if (!env.AI) {
       console.error(
         "AI binding is missing.\nAdd this to wrangler.json or .dev.vars:\n\n" +
-          `"ai": { "binding": "AI" }`
+        `"ai": { "binding": "AI" }`
       );
     }
 
+    // Delegate all chat traffic
     return (
       (await routeAgentRequest(request, env)) ||
       new Response("Not found", { status: 404 })
