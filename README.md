@@ -1,4 +1,4 @@
-# 🤖 Chat Agent Starter Kit
+# 🤖 Finance Chat Agent 
 
 ![npm i agents command](./npm-agents-banner.svg)
 
