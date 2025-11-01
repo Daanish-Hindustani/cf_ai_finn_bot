@@ -1,8 +1,8 @@
 # 🤖 Finance Chat Agent 
 
-![npm i agents command](./npm-agents-banner.svg)
+A financial agent is designed to help you make the best financial decisions by providing information, insights, and guidance tailored to your individual goals and circumstances. This agent can assist with budgeting, investing concepts, debt management, retirement planning, and other financial topics to help you achieve a sound financial future.
 
-A finacal Agent to help make the best finacla desisons.
+Important: Please note that this financial agent does not provide explicit financial advice or personalized recommendations due to the inherent risks involved in financial decisions. It is always recommended to consult a licensed financial advisor or professional for personalized advice tailored to your specific situation.
 ## Features
 
 - 💬 Interactive chat interface with AI
