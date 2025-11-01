@@ -21,12 +21,12 @@ import { env } from "cloudflare:workers";
 // --- Initialize Workers AI ---
 const workersai = createWorkersAI({ binding: env.AI });
 
-// 💡 You can switch to other models like:
-// const model = workersai("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
+// 💡 Model choice: lightweight + fast
 const model = workersai("@cf/meta/llama-3.2-1b-instruct");
 
 /**
- * Chat Agent implementation that handles AI chat interactions
+ * Chat Agent that handles user messages, executes tools,
+ * and always responds with clean financial insights.
  */
 export class Chat extends AIChatAgent<Env> {
   async onChatMessage(
@@ -36,14 +36,14 @@ export class Chat extends AIChatAgent<Env> {
     const allTools = {
       ...tools,
       ...this.mcp.getAITools(),
+      
     };
 
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
-        // Clean up incomplete or duplicate tool calls
+        // --- Clean + process previous tool calls ---
         const cleanedMessages = cleanupMessages(this.messages);
 
-        // Process pending tool calls from previous messages
         const processedMessages = await processToolCalls({
           messages: cleanedMessages,
           dataStream: writer,
@@ -51,26 +51,33 @@ export class Chat extends AIChatAgent<Env> {
           executions,
         });
 
-        // --- AI Model Stream ---
+        // --- Stream model response ---
         const result = streamText({
           system: `
-You are Finn, a helpful assistant.
+You are **Finn**, a friendly and intelligent financial assistant.
 
-Only call tools that are explicitly available to you.
-If you don’t have the right tool, just explain the answer conversationally.
-Do not invent new tools such as "getSolarInformation".
-Respond in natural language, not JSON, unless explicitly asked.
-
+🧭 Your job:
+- Help users with financial questions, investing concepts, or budgeting tips.
+- If a question is NOT related to finance, politely say you cannot answer.
+- DO NOT return JSON, code, or structured objects.
+- Provide only natural, human-readable text as your final answer.
+- When using tools (like "searchWeb"), summarize the findings and end with actionable financial advice.
+- Always wrap up with a clear recommendation or insight — e.g., “Based on this, you might consider...”.
 
 ${getSchedulePrompt({ date: new Date() })}
 
 If the user asks to schedule something, use the **schedule** tool.
-If unsure, ask clarifying questions.
+If unsure, ask clarifying questions before acting.
           `.trim(),
+
           messages: convertToModelMessages(processedMessages),
           model,
           tools: allTools,
+
+          // Final callback when the stream finishes
           onFinish: onFinish as unknown as StreamTextOnFinishCallback<typeof allTools>,
+
+          // Prevent infinite loops
           stopWhen: stepCountIs(10),
         });
 
@@ -81,13 +88,18 @@ If unsure, ask clarifying questions.
     return createUIMessageStreamResponse({ stream });
   }
 
+  /**
+   * Executes scheduled financial tasks.
+   */
   async executeTask(description: string, _task: Schedule<string>) {
     await this.saveMessages([
       ...this.messages,
       {
         id: generateId(),
         role: "user",
-        parts: [{ type: "text", text: `Running scheduled task: ${description}` }],
+        parts: [
+          { type: "text", text: `Running scheduled task: ${description}` },
+        ],
         metadata: { createdAt: new Date() },
       },
     ]);
@@ -95,17 +107,19 @@ If unsure, ask clarifying questions.
 }
 
 /**
- * Worker entry point for routing requests
+ * --- Worker entry point ---
  */
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext) {
     const url = new URL(request.url);
 
+    // Healthcheck endpoint
     if (url.pathname === "/check-open-ai-key") {
       const hasAI = !!env.AI;
       return Response.json({ success: hasAI });
     }
 
+    // Error check for missing binding
     if (!env.AI) {
       console.error(
         "AI binding is missing.\nAdd this to wrangler.json or .dev.vars:\n\n" +
@@ -113,6 +127,7 @@ export default {
       );
     }
 
+    // Delegate all chat traffic
     return (
       (await routeAgentRequest(request, env)) ||
       new Response("Not found", { status: 404 })

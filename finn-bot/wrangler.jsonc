@@ -35,7 +35,10 @@
 	],
 	"observability": {
 		"enabled": true
-	}
+	},
+	"workflows": [
+    { "name": "FINANCIAL_ADVICE_WORKFLOW", "binding": "FINANCIAL_ADVICE_WORKFLOW", "class_name": "FinancialAdviceWorkflow" }
+  ]
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
