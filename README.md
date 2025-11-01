@@ -26,3 +26,8 @@ A finacal Agent to help make the best finacla desisons.
 ```bash
 npm start
 ```
+
+Example query:
+```
+Describe common techniques for managing investment risk (diversification, rebalancing, dollar-cost averaging) and give example workflows a beginner could follow.
+```
